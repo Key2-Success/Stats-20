@@ -1,0 +1,413 @@
+---
+title: "Final Project"
+author: "Kitu Komya"
+date: "November 28, 2016"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+<center> 
+<h1> **Final Report** </h1>
+### *by Kitu Komya*
+</center>
+
+# **Introduction**
+
+We've been given three sets of datasets: edmunds, cell, and irs. These data files will be used to answer questions regarding the relationships between variables within the set. Since all three of the data files are related, they will eventually be joined so that more analysis can be run on them. We will understand if there is a significant difference between # Of single tax returns vs # of joint tax returns which may be of interest to people better trying to understand how the irs system works and how each location is affected by these two variables. We will also learn the relationship between the dependencies and the number of single returns which may be of interest to those who file their taxes so they may better understand the dynamics of the system.
+
+
+<br>
+
+# **Data**
+
+### **Describe the individual data files**
+
+The edmunds original data dimensions is 2445924 by 24. After cleanup, it was 2445924 by 16.
+The irs original data dimensions is 288 by 111. After cleanup, it was 288 by 7.
+The cell original data dimensions is 9248 by 22. After cleanup, it was 9248 by 22.
+
+The edmunds data set comes from edmunds.com in which each car is assigned multiple aspects such as a unique car ID, information about the car, pricing information, information on the dealer, and other location tidbits. Most of the variables were descriptive in describing the car physically or numerical in describing tidbits like its price.
+
+The irs data set is aggregated tax information from the IRS directly from the year 2014. They are based on returns from residents from different zipcodes. The variables here are all numeric since they relate to the number of tax returns.
+
+The cell data set contains information about cell towers in Los Angeles. The data set includes information on the cell tower's location and type, and thus the variables range from descriptive to numerical.
+
+<br>
+
+### **Clean the data**
+```{r echo = FALSE}
+library(readr)
+library(readxl)
+library(haven)
+library(dplyr)
+library(stringr)
+library(knitr)
+library(leaflet)
+```
+
+```{r echo = FALSE}
+irs <- read_excel("data/irs-la-zip.xls")
+```
+
+```{r echo = FALSE}
+cell <- read_csv(file = "data/la-cell-towers.csv")
+```
+
+```{r echo = FALSE}
+edmunds <- read_stata(file = "data/edmunds.dta")
+```
+
+```{r echo = FALSE}
+# subsetted edmunds by removing requested variables
+edmunds <- edmunds[c(-8, -9, -10, -12, -13, -14, -15, -19)]
+```
+
+```{r echo = FALSE}
+# subsetting irs data by keeping requested variables
+irs <- irs[c(1, 2, 3, 4, 5, 8, 9)]
+```
+
+```{r echo = FALSE}
+# changing missing values to NAs
+edmunds[edmunds == ""] <- NA
+edmunds[edmunds == "none"] <- NA
+```
+
+```{r echo = FALSE}
+# changing date/datetime variables to date/POSIX class variables
+cell$date_updat <- cell$date_updat %>% 
+  as.Date()
+```
+
+```{r echo = FALSE}
+# changing date/datetime variables to date/POSIX class variables
+edmunds$lead_date <- as.POSIXct(edmunds$lead_date)
+```
+
+```{r echo = FALSE}
+# changing factors/characters into numerics for relevant variables
+cell$info2 <- cell$info2 %>% 
+  as.numeric()
+```
+
+```{r echo = FALSE}
+# changing factors/characters into numerics for relevant variables
+edmunds$list_price <- edmunds$list_price %>% 
+  as.factor() %>% 
+  as.numeric()
+
+edmunds$msrp <- edmunds$msrp %>% 
+  as.factor() %>% 
+  as.numeric()
+```
+
+```{r echo = FALSE}
+# changing numeric to factor for relevant variables
+irs$ZIPCODE <- irs$ZIPCODE %>% 
+  as.factor()
+```
+
+
+In cleaning the data, all the unneeded variables were dropped, the missing values wered changed into NAs, date/datetime variables were changed to date/POSIX variables, numerics were ensured to be numerical variables and not characters, and factors were also ensured to be factor variables and not characters. Many dplyr and pipes techniques were used to change the variable class types, the most consuming part of data cleaning.
+
+<br>
+
+### **Summarize**
+
+```{r echo = FALSE}
+# histogram of leads
+hist(edmunds$lead_date, breaks = "months", col = "steelblue", main = "Distribution of lead date submissions", xlab = "Date", ylab = "Frequency", xlim=c(as.POSIXct("2013-01-31", format="%Y-%m-%d"), as.POSIXct("2015-02-28", format="%Y-%m-%d")))
+```
+
+After zooming in on this histogram data, we see that the shape of the distribution of lead date submissions is skewed to the left, with the majority of submissions occurring in 2014 and 2015. The spread is huge since the range encompasses nearly 2 years. The center is around the middle of 2014.
+
+```{r echo = FALSE}
+edmunds$model_year <- edmunds$model_year %>% 
+  as.POSIXct(format = "%Y")
+hist(edmunds$model_year, breaks = "years", col = "forestgreen", main = "Distribution of model years", xlab = "Model Year", ylab = "Frequency", xlim=c(as.POSIXct("2010-12-31", format="%Y-%m-%d"), as.POSIXct("2015-12-31", format="%Y-%m-%d")))
+```
+
+We see that the model year distribution is skewed to the left. The spread of the model years is from 2010 to 2016. We see that we achieve the peak frequency occurs in the year 2014, which is probably also the center of our distribution.
+
+```{r echo = FALSE}
+edmunds$make <- as.factor(edmunds$make)
+edmunds$make[edmunds$make == "hyundai"] <- "honda"
+
+edmunds %>% 
+  group_by(make) %>% 
+  summarize(most_popular_makes = n()) %>% 
+  top_n(n = 5) %>% 
+  arrange(desc(most_popular_makes)) %>% 
+  kable()
+```
+
+```{r echo = FALSE}
+edmunds %>% 
+  group_by(make) %>% 
+  summarize(least_popular_makes = n()) %>% 
+  top_n(n = -5) %>% 
+  arrange(least_popular_makes) %>% 
+  kable()
+```
+
+As we can see from the outputted table, the most popular make is honda, and the least popular make is isuzu and oldsmobile.
+
+```{r echo = FALSE}
+hist(edmunds$msrp, col = "orange", main = "Distribution of suggested price for car to be sold by car manufacturer", xlab = "Suggested price for car to be sold by car manufacturer")
+```
+
+What an ugly graph. However, I will not change the x value range because that is omitting data. As we can see, the distribution of suggested price for car to be sold by car manufacturer is highly concentrated at the end range at about 30000. The mean is also at 30000. Although the spread ranges from 0 to 30000, the values before 30000 are basically irrelevant in comparison to the 30000 values. This makes sense because the price suggested by the car manufacturer for a vehicle to be sold is pretty high and around those values.
+
+
+In this IRS data, we discover a few relationships between the variables. Firstly, the N1 refers to the number of returns, and thus, the variables MARS1 (# of single returns), MARS2 (# of joint returns), and MARS4 (# of head of household returns) will all add up together to approximately equal N1. It's not exact because in our dataset we have omitted a few other types of returns. A00100 is the adjusted group income when taken into account all of the returns in each zipcode area.
+
+```{r echo = FALSE}
+cell$ZIP <- as.factor(cell$ZIP)
+cell$Name <- as.factor(cell$ZIP)
+
+cell %>% 
+  group_by(ZIP) %>% 
+  summarize(most_cell_towers = n()) %>% 
+  top_n(n = 5) %>% 
+  arrange(desc(most_cell_towers)) %>% 
+  kable()
+
+cell %>% 
+  group_by(ZIP) %>% 
+  summarize(least_cell_towers = n()) %>% 
+  top_n(n = -5) %>% 
+  arrange(least_cell_towers) %>% 
+  kable()
+
+cell$city <- as.factor(cell$city)
+```
+
+
+```{r echo = FALSE}
+cell$city[cell$city == "Agoura"] <- "Agoura Hills"
+cell$city[cell$city == "Agura Hills"] <- "Agoura Hills"
+cell$city[cell$city == "Azusa"] <- "Azuza"
+cell$city[cell$city == "Basset"] <- "Bassett"
+cell$city[cell$city == "Bell"] <- "Bell Flower"
+cell$city[cell$city == "Bellflower"] <- "Bell Flower"
+cell$city[cell$city == "Beverly Hill"] <- "Beverly Hills"
+cell$city[cell$city == "Calabases"] <- "Calabasas"
+cell$city[cell$city == "Calabasis"] <- "Calabasas"
+cell$city[cell$city == "Calabassas"] <- "Calabasas"
+cell$city[cell$city == "Canyon Country"] <- "Canyon County"
+cell$city[cell$city == "Casztaic"] <- "Castaic"
+cell$city[cell$city == "Catalina"] <- "Catalina Island"
+cell$city[cell$city == "Clarmont"] <- "Claremont"
+cell$city[cell$city == "Culver"] <- "Culver City"
+cell$city[cell$city == "Dominguez"] <- "Dominguez Hills"
+cell$city[cell$city == "Dominquez"] <- "Dominguez Hills"
+cell$city[cell$city == "E. Los Angeles"] <- "East Los Angeles"
+cell$city[cell$city == "E Los Angeles"] <- "East Los Angeles"
+cell$city[cell$city == "Glenora"] <- "Glendora"
+cell$city[cell$city == "Grenada Hills"] <- "Granada Hills"
+cell$city[cell$city == "Hawaiin Gardens"] <- "Hawaiian Gardens"
+cell$city[cell$city == "Hollwood"] <- "Hollywood"
+cell$city[cell$city == "Iwindale"] <- "Irwindale"
+cell$city[cell$city == "L0s Angeles"] <- "Los Angeles"
+cell$city[cell$city == "La Canada"] <- "La Canada Flintridge"
+cell$city[cell$city == "La Canada Flintrdge"] <- "La Canada Flintridge"
+cell$city[cell$city == "La Cresenta"] <- "La Crescenta"
+cell$city[cell$city == "La Habra"] <- "La Habra Heights"
+cell$city[cell$city == "Lacrescenta"] <- "La Crescenta"
+cell$city[cell$city == "Lakeview Terrace"] <- "Lake View Terrace"
+cell$city[cell$city == "Little Rock"] <- "Littlerock"
+cell$city[cell$city == "Lo Beach"] <- "Long Beach"
+cell$city[cell$city == "Lon Beach"] <- "Long Beach"
+cell$city[cell$city == "Long Branch"] <- "Long Beach"
+cell$city[cell$city == "Los Alamiatos"] <- "Los Alamitos"
+cell$city[cell$city == "Almaitos"] <- "Los Alamitos"
+cell$city[cell$city == "Los Angelas"] <- "Los Angeles"
+cell$city[cell$city == "Los Angels"] <- "Los Angeles"
+cell$city[cell$city == "Los Anglels"] <- "Los Angeles"
+cell$city[cell$city == "Los Angles"] <- "Los Angeles"
+cell$city[cell$city == "Losangeles"] <- "Los Angeles"
+cell$city[cell$city == "Malibu"] <- "Malibu Beach"
+cell$city[cell$city == "Mailbu Beach"] <- "Malibu Beach"
+cell$city[cell$city == "Malibu Lake"] <- "Malibu Beach"
+cell$city[cell$city == "Malibut"] <- "Malibu Beach"
+cell$city[cell$city == "Manhatten Beach"] <- "Manhattan Beach"
+cell$city[cell$city == "Marina Del Ray"] <- "Marina Del Rey"
+cell$city[cell$city == "Montclare"] <- "Montclair"
+cell$city[cell$city == "Montery Park"] <- "Monterey Park"
+cell$city[cell$city == "Montrous"] <- "Montrose"
+cell$city[cell$city == "Mt Baldy Village"] <- "Mount Baldy Village"
+cell$city[cell$city == "Mt. Wilson"] <- "Mount Wilson"
+cell$city[cell$city == "North Ridge"] <- "Northridge"
+cell$city[cell$city == "Northbridge"] <- "Northridge"
+cell$city[cell$city == "Pacific Palasades"] <- "Pacific Palisades"
+cell$city[cell$city == "Pacific Palsides"] <- "Pacific Palisades"
+cell$city[cell$city == "Pacioma"] <- "Pacoima"
+cell$city[cell$city == "Pacoim"] <- "Pacoima"
+cell$city[cell$city == "Palmdae"] <- "Palmdale"
+cell$city[cell$city == "Palmdate"] <- "Palmdale"
+cell$city[cell$city == "Palmdate"] <- "Palmdale"
+cell$city[cell$city == "Palmsdale"] <- "Palmdale"
+cell$city[cell$city == "P V Estates"] <- "Palos Verdes"
+cell$city[cell$city == "Pales Verde"] <- "Palos Verdes"
+cell$city[cell$city == "Palo Verdes"] <- "Palos Verdes"
+cell$city[cell$city == "Palos Verdes Estate"] <- "Palos Verdes"
+cell$city[cell$city == "Pamdale"] <- "Palmdale"
+cell$city[cell$city == "Pasasena"] <- "Pasadena"
+cell$city[cell$city == "Pico Rivers"] <- "Pico Rivera"
+cell$city[cell$city == "Playa Del Ray"] <- "Playa Del Rey"
+cell$city[cell$city == "Rancho Domiguez"] <- "Rancho Dominguez"
+cell$city[cell$city == "Rancho Falos Verdes"] <- "Rancho Palos Verdes"
+cell$city[cell$city == "Rancho Palo Verdes"] <- "Rancho Palos Verdes"
+cell$city[cell$city == "Rancho Palos"] <- "Rancho Palos Verdes"
+cell$city[cell$city == "Rancho Palos Verde"] <- "Rancho Palos Verdes"
+cell$city[cell$city == "Rancho Palso Verdes"] <- "Rancho Palos Verdes"
+cell$city[cell$city == "Rancho Pv"] <- "Rancho Palos Verdes"
+cell$city[cell$city == "Rednodo Beach"] <- "Redondo Beach"
+cell$city[cell$city == "Rednodo Bech"] <- "Redondo Beach"
+cell$city[cell$city == "Rolling Hills"] <- "Rolling Hills Estate"
+cell$city[cell$city == "Rolling Hills Es"] <- "Rolling Hills Estate"
+cell$city[cell$city == "Rolling Hills Estats"] <- "Rolling Hills Estate"
+cell$city[cell$city == "Rowland Hts"] <- "Rowland Heights"
+cell$city[cell$city == "San Dimus"] <- "San Dimas"
+cell$city[cell$city == "San Garbriel"] <- "San Gabriel"
+cell$city[cell$city == "Sant Monica"] <- "Santa Monica"
+cell$city[cell$city == "Santa Clerita"] <- "Santa Clarita"
+cell$city[cell$city == "Saugas"] <- "Saugus"
+cell$city[cell$city == "Simi"] <- "Simi Valley"
+cell$city[cell$city == "S Pasadena"] <- "South Pasadena"
+cell$city[cell$city == "Sylman"] <- "Sylmar"
+cell$city[cell$city == "Symar"] <- "Sylmar"
+cell$city[cell$city == "Terinal Island"] <- "Terminal Island"
+cell$city[cell$city == "Tijunga"] <- "Tujunga"
+cell$city[cell$city == "Topanga"] <- "Topanga Canyon"
+cell$city[cell$city == "Wanut"] <- "Walnut"
+cell$city[cell$city == "Westhollywood"] <- "West Hollywood"
+cell$city[cell$city == "Westlake"] <- "Westlake Village"
+cell$city[cell$city == "Whittaer"] <- "Whittier"
+cell$city[cell$city == "Whitter"] <- "Whittier"
+cell$city[cell$city == "Wilminton"] <- "Wilmington"
+cell$city[cell$city == "Woodlawn Hills"] <- "Woodland Hills"
+```
+
+
+The zipcode with the most amount of cell towers is 91042. There are many zipcodes with only 1 cell tower, so I will not list them all since they are included in the table, but a few include 90222, 90506, and 90630. The cities in the zipcode 91042 are Tujunga, Montrose, La Crescenta, Los Angeles, Sunland, Pasadena, Mount Lukens, Valencia, Highway Highlands, Burbank, La Canada, and Sylmar. 
+
+<br>
+
+
+### **Join data files**
+
+```{r echo = FALSE}
+edmunds$dealer_zip <- as.factor(edmunds$dealer_zip)
+join <- left_join(edmunds, irs, by = c("dealer_zip" = "ZIPCODE"))
+
+```
+
+```{r echo = FALSE}
+join %>% 
+  group_by(dealer_zip) %>% 
+  summarize(most_celltowers = n()) %>% 
+  top_n(n = 1) %>% 
+  arrange(desc(most_celltowers)) %>% 
+  kable()
+```
+
+```{r echo = FALSE}
+new <- join[which(join$dealer_zip == "90703"), ]
+final <- semi_join(join, new, by = "dealer_zip")
+```
+
+Zipcode 90703 has the most cell towers. This new join vector has 18031 observations. 
+
+
+<br>
+
+### **Bonus Task**
+
+```{r echo = FALSE}
+leaflet(cell) %>% 
+  addTiles() %>% 
+  addMarkers(lng = ~longitude, lat = ~latitude, popup = ~city) %>% 
+  addProviderTiles("OpenTopoMap")
+
+```
+
+We have created a map in which we can see the locations of all of the cell towers. They are mainly concentrated in Southern California.
+
+
+<br>
+
+# **Analysis**
+
+### **t-test**
+
+```{r}
+t.test(irs$MARS1, irs$MARS2, alternative = "greater")
+```
+
+I am choosing to compare the means between the MARS1 and MARS2 data from the irs dataset. Basically, I am testing to see whether there is a difference in means in the number of single returns and the number of joint returns. By looking at the difference in means, I will be able to discern which kind of tax return is more significantly filed.
+
+<br>
+
+### **Linear Regression**
+
+```{r}
+fit <- lm(MARS1~NUMDEP, data = irs)
+plot(MARS1~NUMDEP, data = irs, main = "Relationship between # of single returns and # of dependencies", xlab = "Number of dependencies", ylab = "# of single returns")
+summary(fit)
+abline(fit)
+```
+
+I have included the plot to better understand the relationship between the number of single returns and number of dependencies. In the conclusions section, I will elaborate on this plot as well as the summary output.
+
+<br>
+
+### **Custom Functions**
+
+```{r}
+zipcode <- function(zip) {
+  
+# I have created blank vectors for the outputs
+cell <- c()
+tax <- c()
+car <- c()
+
+n <- length(zip) # this is the length of the zipcode vector
+
+# makes function robust by only allowing for correct input types
+if(!is.factor(zip)) {
+  stop(paste("Your input needs to be a vector of zipcode values in the factor format. Your class is currently", class(x)))
+}
+
+# for loop adds the table values into output for each zipcode
+for (i in 1:n) {
+  cell[i] <- nrow(subset(cell, zipcode == zip[i])) # counts all cell towers
+  tax[i] <- sum(subset(irs, zipcode == zip[i][2])) # counts all tax returns since the total tax returns is stored in N1
+  car[i] <- nrow(subset(edmunds, zipcode == zip[i])) # counts all car leads
+}
+
+# creates data frame output for all zipcodes
+output <- data.frame(zip, cell, tax, car) %>% 
+  kable()
+
+# returns the output 
+return(output)
+}
+```
+
+
+<br>
+
+# **Results & Conclusions**
+
+The p-value is 2.2 * 10^-16 which is clearly less than 0.05. This means that at the 95% significance level, there is a significant difference in means between the number of single returns and the number of joint returns. More specifically, since we ran at an alternative value of "greater," the number of single returns is significantly greater than the number of joint returns. Thus, they are not statistically equal. Our output actually tells us the mean of the two variables. The mean of the number of single returns is 7884.340, and the mean of joint returns is 5001.771, and since they really are not values close to each other, we can be confident that our t-test worked.
+
+The adjusted r square value is 0.5243 which means that 52.43% of the variability in the # of single returns is explained by our linear model. And honestly, that's not too bad. This means that there is a positive, linear, moderately strong correlation between the number of dependencies and the # of single returns. This is surprising, because we should expect that if there are more dependencies in a family, for instance, then the # of single returns should decrease and instead the # of joint returns increase. That is why I believe that there is a lurking variable. The lurking variable is population. In a city, for instance, if there are many dependencies, then in that city there will be a higher number of single and joint returns. Thus, our linear model is useless since it fails to recognize this confounding variable, which has a profound effect on our conclusions.
+
+
+```{r}
+#zipcode(x = c(97477, 92545))
+```
+
+I genuinely do not know why my function is not working, unfortunately. What a grievance this is, honestly. I have uncommented it out because the function does not let the entire html to knit otherwise. Aaah!
